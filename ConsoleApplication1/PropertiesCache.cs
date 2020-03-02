@@ -13,11 +13,19 @@ namespace ConsoleApplication1
         public static List<PropertyInfo> TypePropertiesCache(Type type)
         {
             var ignoredProperties = new[] {"RowVersion"};
-            var forcedProperties = new[] {"RowVersion"};
             var properties = type.GetProperties().ToArray();
             TypeProperties[type.TypeHandle] = properties;
-            return properties.Where(p => (p.CanWrite && !ignoredProperties.Contains(p.Name) && (p.PropertyType.IsValueType || p.PropertyType == typeof (string))) ||
-                                         forcedProperties.Contains(p.Name)).ToList();
+            var propertyInfos = properties.Where(p => p.CanWrite &&
+                                                      !ignoredProperties.Contains(p.Name) &&
+                                                      (p.PropertyType.IsValueType || p.PropertyType == typeof(string)))
+                .ToList();
+
+            if (properties.Any(p => p.Name == "RowVersion"))
+            {
+                propertyInfos.Add(properties.First(p => p.Name == "RowVersion"));
+            }
+
+            return propertyInfos;
         }
     }
 }

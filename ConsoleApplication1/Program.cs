@@ -14,7 +14,8 @@ namespace ConsoleApplication1
     {
         public static void Main(string[] args)
         {
-            using (var connection = new SqlConnection("Data Source=192.168.10.20;Initial Catalog=KF_Sales;User ID=sa;Password=123"))
+            //using (var connection = new SqlConnection("Data Source=192.168.10.20;Initial Catalog=KF_Sales;User ID=sa;Password=123"))
+            using (var connection = new SqlConnection(@"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=KF_Sales;Trusted_Connection=True;"))
             {
                 var selectCommand = new SqlCommand("SELECT * FROM [SalesManagement].[Item]", connection);
                 connection.Open();
@@ -42,12 +43,15 @@ namespace ConsoleApplication1
 
                 var updateTargetProperties = new Expression<Func<Item, object>>[] {p => p.Title};
                 var bulkOperationParam = new BulkOperationParam<Item>(connection, items);
-                BulkUpdate(bulkOperationParam, updateTargetProperties);
+                var numberOfRowsAffected = BulkUpdate(bulkOperationParam, updateTargetProperties);
+
+                Console.WriteLine($"NumberOfRowsAffected:\t{numberOfRowsAffected}");
+                Console.ReadKey();
             }
         }
 
 
-        private static void BulkUpdate<T>(BulkOperationParam<T> bulkOperationParam, params Expression<Func<T, dynamic>>[] updateTargetProperties)
+        private static int BulkUpdate<T>(BulkOperationParam<T> bulkOperationParam, params Expression<Func<T, dynamic>>[] updateTargetProperties)
         {
             var tempTableName = nameof(BulkUpdate);
             var bulkOperationConfig = GetBulkOperationConfig(bulkOperationParam, tempTableName);
@@ -78,10 +82,12 @@ namespace ConsoleApplication1
             if (numberOfRowsAffected != bulkOperationParam.Data.Count())
             {
                 DropTable(bulkOperationParam.Connection, bulkOperationConfig.TempTable);
-                throw new Exception("");
+                throw new Exception("Number of affected rows are not expected, maybe CONCURRENCY occurred!");
             }
 
             DropTable(bulkOperationParam.Connection, bulkOperationConfig.TempTable);
+
+            return numberOfRowsAffected;
         }
 
         private static BulkOperationConfig GetBulkOperationConfig<T>(BulkOperationParam<T> bulkOperationParam, string tempTableName)
@@ -103,15 +109,21 @@ namespace ConsoleApplication1
             bulkOperationConfig.AllPropertiesString = GetColumnsStringSqlServer(bulkOperationConfig.AllProperties);
             bulkOperationConfig.TempTable = $"##{bulkOperationConfig.DestinationTableName.Replace(".", "_").Replace("[", string.Empty).Replace("]", string.Empty)}{tempTableName}";
 
-            var command =
-                new SqlCommand($@"SELECT TOP 1 {bulkOperationConfig.AllPropertiesString} INTO {bulkOperationConfig.TempTable} FROM {bulkOperationConfig.DestinationTableName} target WITH(NOLOCK);",
-                    bulkOperationParam.Connection as SqlConnection);
+
+            var columnNames = bulkOperationConfig.AllPropertiesString.Replace(", [RowVersion]", "");
+            var command = new SqlCommand(
+                $@"SELECT TOP 0 {columnNames} INTO {bulkOperationConfig.TempTable} FROM {bulkOperationConfig.DestinationTableName} target WITH(NOLOCK);",
+                bulkOperationParam.Connection as SqlConnection);
             if (bulkOperationParam.Connection.State != ConnectionState.Open)
             {
                 bulkOperationParam.Connection.Open();
             }
 
             command.ExecuteNonQuery();
+
+            var command2 = new SqlCommand($@"ALTER TABLE {bulkOperationConfig.TempTable}
+                                            ADD RowVersion binary(8) NULL;", bulkOperationParam.Connection as SqlConnection);
+            command2.ExecuteNonQuery();
             
             return bulkOperationConfig;
         }
