@@ -14,8 +14,8 @@ namespace ConsoleApplication1
     {
         public static void Main(string[] args)
         {
-            //using (var connection = new SqlConnection("Data Source=192.168.10.20;Initial Catalog=KF_Sales;User ID=sa;Password=123"))
-            using (var connection = new SqlConnection(@"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=KF_Sales;Trusted_Connection=True;"))
+            using (var connection = new SqlConnection("Data Source=192.168.10.20;Initial Catalog=KF_Sales;User ID=sa;Password=123"))
+            //using (var connection = new SqlConnection(@"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=KF_Sales;Trusted_Connection=True;"))
             {
                 var selectCommand = new SqlCommand("SELECT * FROM [SalesManagement].[Item]", connection);
                 connection.Open();
@@ -100,9 +100,20 @@ namespace ConsoleApplication1
             };
             if (bulkOperationParam.ExtraColumns != null)
             {
+                var rowVersionPropertyInfo = bulkOperationConfig.AllProperties.FirstOrDefault(p => p.Name == "RowVersion");
+                if (rowVersionPropertyInfo != null)
+                {
+                    bulkOperationConfig.AllProperties.Remove(rowVersionPropertyInfo);
+                }
+
                 foreach (var extraColumnsKey in bulkOperationParam.ExtraColumns.Keys)
                 {
                     bulkOperationConfig.AllProperties.Add(new CustomPropertyInfo(extraColumnsKey, typeof (object)));
+                }
+
+                if (rowVersionPropertyInfo != null)
+                {
+                    bulkOperationConfig.AllProperties.Add(rowVersionPropertyInfo);
                 }
             }
 
@@ -206,12 +217,17 @@ namespace ConsoleApplication1
 
         private static void DropTable(IDbConnection connection, string tableName)
         {
-            var query = $@"DROP TABLE {tableName};";
+            var query = $@"DROP TABLE IF EXISTS {tableName};";
             ExecuteQuery(connection, query);
         }
 
         private static int ExecuteQuery(IDbConnection connection, string query)
         {
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.Open();
+            }
+
             var command = new SqlCommand { CommandText = query, Connection = connection as SqlConnection };
             var numberOfRowsAffected = command.ExecuteNonQuery();
             //connection.Close();
